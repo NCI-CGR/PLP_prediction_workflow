@@ -13,27 +13,42 @@
 # rm(list=ls(all=T))
 # sessionInfo()
 
-
+### By default
+# snpeff and annovar keep the original chr ID
+# but intervar removes chr prefix
+# therefore, the merge process is fine for Genomel and gnomad 
+# but failed for ukb data
+# I need revise the R code to drop chr prefix if exists.
 
 # library(pacman)
 library(tidyverse) #1.3.1
 library(bigreadr)  #0.2.4
 library(rlang) #1.0.5
 
-intervar_fn <- snakemake@input[["intervar"]]
+intervar_fn <-  snakemake@input[["intervar"]]
 annovar_fn <- snakemake@input[["annovar"]]
 snpeff_fn <- snakemake@input[["snpeff"]]
+
+# intervar_fn <- "/Volumes/data/ukbb/dnanexus/ukb_batch2/intervar/00000.hg38_multianno.txt.intervar"
+# annovar_fn <- "/Volumes/data/ukbb/dnanexus/ukb_batch2/annovar/00000.hg38_multianno.txt"
+# snpeff_fn <- "/Volumes/data/ukbb/dnanexus/ukb_batch2/snpeff/00000.vcf"
+
 
 
 add_vid <- function(df, new_vid="variant_id", chr_pos_ref_alt_columns=c("Chr", "Start", "Ref", "Alt") ){
   var_enq <- rlang::sym(new_vid)
-  rv <- df %>% unite(!!var_enq, all_of(chr_pos_ref_alt_columns), sep=':', remove=F) 
+  rv <- df %>% 
+    unite(!!var_enq, all_of(chr_pos_ref_alt_columns), sep=':', remove=F) %>% 
+    mutate(!!var_enq := sub("^chr", "", !!var_enq))
+  
   return(rv)
 }
+
 # tidyverse bigreadr
 
-anno_impact <- bigreadr::fread2(sprintf("grep -v '^##' %s", snpeff_fn), sep="\t", fill=T, check.names=T, select=c("ID", "INFO")) %>% extract(INFO, into=c("ANN"), regex=";ANN=(.+)$") %>% 
+anno_impact <- bigreadr::fread2(sprintf("grep -v '^##' %s", snpeff_fn), sep="\t", fill=T, check.names=T, select=c("ID", "INFO")) %>% tidyr::extract(INFO, into=c("ANN"), regex=";ANN=(.+)$") %>% 
   separate(ANN, into=c(NA, NA, "impact"), sep='\\|', remove=F, extra="drop") %>%
+  mutate(ID=sub("^chr", "", ID)) %>%
   dplyr::select(vid=ID, impact)
 
 anno_intervar <- bigreadr::fread2(intervar_fn) %>%
