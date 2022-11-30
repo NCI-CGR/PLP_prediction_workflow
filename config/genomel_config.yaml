@@ -1,0 +1,12 @@
+# given a list vcf file under the folder
+vcf_input_dir: "/data/zhuw10/ukbb/data/genomel_vcf"
+
+### output_dir is sufficient to keep data unique and output_prefix is to for the merged file
+output_dir: "/data/zhuw10/ukbb/dnanexus/genomel_out"
+output_prefix: "prj1"
+ref: "/data/zhuw10/ukbb/ref/Homo_sapiens_assembly19.fasta"
+genome: "hg19"
+split_total: 100
+
+# for GRCh38.99 
+snpEff_db: "GRCh37.87" 

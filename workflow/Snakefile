@@ -1,0 +1,242 @@
+'''
+Joint variant calling with GATK HaplotypeCaller, Google DeepVariant and Illumina Strelka2. 
+
+Notes:
+    This pipeline is for use with the production germline pipeline.
+    Therefore, some things are assumed, e.g. that input bams are indexed,
+    that the reference genome is appropriately indexed, etc.  The pipeline
+    will halt if these assumptions are not true, but there are no rules
+    to perform these tasks.
+
+Input:
+    Customized config.yaml, sorted/indexed bams
+
+Output:
+    Merged multi-sample VCFs, one called with HaplotypeCaller, one
+    called with DeepVariant, and one called with Strelka2
+
+'''
+
+
+import os
+import subprocess
+import glob
+from pathlib import Path
+from datetime import datetime
+
+
+
+
+# reference the config file
+# configfile: "../config/config.yaml"
+report: 'report/workflow.rst'
+    
+# load import variables from the config file
+vcf_input_dir = config["vcf_input_dir"]
+output_dir    = config["output_dir"]
+output_prefix = config["output_prefix"]
+ref           = config["ref"]
+genome        = config["genome"]
+split_total   = config["split_total"] 
+snpEff_db   = config["snpEff_db"]
+
+IDS, = glob_wildcards(vcf_input_dir + "/{id}.vcf.gz")
+CHUNKS =[str(x).zfill(5) for x in range(split_total)]
+
+
+rule all:
+    input:
+        # output_dir+"/"+output_prefix + ".vcf.gz",
+        # expand(output_dir+"/splitted/{chunk}.vcf", chunk=CHUNKS),
+        expand(output_dir+"/annovar/{chunk}."+genome+"_multianno.txt", chunk=CHUNKS),
+        expand(output_dir+"/snpeff/{chunk}.vcf", chunk=CHUNKS),
+        expand(output_dir+"/intervar/{chunk}."+genome+"_multianno.txt.intervar", chunk=CHUNKS),
+        expand(output_dir+"/plp/{chunk}.plp_slim.txt", chunk=CHUNKS),
+        output_dir+"/merged_txt/CI_001.txt",
+        output_dir+"/merged_txt/JU_001.txt",
+        output_dir+"/merged_txt/proxy_001.txt"
+
+### slow and need provide option to skip it 
+rule prep: 
+    input: vcf_input_dir + "/{id}.vcf.gz"
+    output: temp(output_dir + "/prep/{id}.vcf")
+    threads: 8
+    resources :
+        mem_mb=50000
+    envmodules: "bcftools/1.13"
+    params: ref=ref
+    shell: '''
+        bcftools view -e 'ALT="*"' -Ou {input} |bcftools norm -m-both -Ou --threads {threads} | bcftools norm -f {params.ref} | bcftools annotate -Oz -x ID  -I +"%CHROM:%POS:%REF:%ALT" --threads {threads} | zcat | cut -f 1-8 > {output} 
+    '''
+
+rule prep_gz:
+    input: output_dir + "/prep/{id}.vcf"
+    output: gz=output_dir + "/prep/{id}.vcf.gz",
+            tbi=output_dir + "/prep/{id}.vcf.gz.tbi"
+    resources :
+        mem_mb=4000
+    envmodules: "bcftools/1.13"
+    shell: "bgzip {input}; tabix -p vcf {output.gz} " 
+
+### merge and also make some processing here
+rule merge_vcf:
+    input: expand(output_dir + "/prep/{id}.vcf.gz", id=IDS)
+    output: 
+        gz=output_dir+"/"+output_prefix + ".vcf.gz",
+        tbi=output_dir+"/"+output_prefix + ".vcf.gz.tbi"
+    envmodules: "bcftools/1.13"
+    resources :
+        mem_mb=20000
+    threads: 8
+    shell: """
+        bcftools concat -a -D -Ou --threads {threads} {input} | bcftools sort -Oz -o {output.gz}  ; tabix -p vcf {output.gz}
+    """
+
+rule get_vcf_header:
+    input: output_dir+"/"+output_prefix + ".vcf.gz"
+    output: temp(output_dir+"/"+output_prefix + ".vcf_header")
+    resources :
+        mem_mb=4000
+    envmodules: "bcftools/1.13"
+    shell: "bcftools view -h {input} > {output}"
+
+rule split_vcf: 
+    input: output_dir+"/"+output_prefix + ".vcf.gz"
+    output: temp(expand(output_dir+"/splitted/{chunk}.txt", chunk=CHUNKS))
+    params: split_total = split_total, prefix=""
+    resources :
+        mem_mb=10000
+    shell: '''
+    tmpfile=$(mktemp /tmp/abc-script.XXXXXX); zcat {input} | grep -v "^#"  > $tmpfile; split --numeric-suffixes=0 -n l/{params.split_total} --suffix-length=5  --additional-suffix=".txt" $tmpfile   "$(dirname {output[0]})/"
+
+    '''
+
+rule add_vcf_header:
+    input: body=output_dir+"/splitted/{chunk}.txt",
+           header=output_dir+"/"+output_prefix + ".vcf_header"
+    output: output_dir+"/splitted/{chunk}.vcf"
+    resources :
+        mem_mb=4000
+    shell: '''
+        cat {input.header} {input.body} > {output}
+    '''
+
+rule avinput:
+    input: output_dir+"/splitted/{chunk}.txt"
+    output: output_dir+"/avinput/{chunk}.avinput"
+    resources :
+        mem_mb=4000
+    shell: '''
+        awk -v OFS="\\t" '{{if (! /^#/ && $5 != "*") print $1, $2, $2+length($4)-1, $4, $5}}' {input} > {output}
+    '''
+
+# anno/genomel_28genes.hg38_multianno.vcf
+# {prefix}.{ref}_multianno.vcf .txt
+# prefix = output_dir+"/annovar/"+output_prefix+"_{chunk}
+# .{ref}_multianno.vcf.txt
+rule annovar:
+    input: vcf=output_dir+"/avinput/{chunk}.avinput"
+    output: 
+        # vcf=output_dir+"/annovar/{chunk}."+genome+ "_multianno.vcf",
+        txt=output_dir+"/annovar/{chunk}."+genome+"_multianno.txt"            
+    envmodules: "annovar/2020-06-08"
+    log: "logs/annovar/{chunk}.log"
+    threads: 6
+    resources :
+        mem_mb=20000
+    params: 
+        genome=genome,
+        prefix=lambda wildcards: output_dir + "/annovar/" + wildcards.chunk
+    shell: '''
+        perl $ANNOVAR_HOME/table_annovar.pl  {input} $ANNOVAR_DATA/{params.genome} --buildver {params.genome} --out {params.prefix} --remove --protocol refGene,knownGene,ensGene,exac03nontcga,gnomad211_exome,gnomad211_genome,esp6500siv2_all,1000g2015aug_all,clinvar_20210123,dbnsfp41a,dbscsnv11,spliceai_filtered,spidex,cosmic92_coding --operation g,g,g,f,f,f,f,f,f,f,f,f,f,f --nastring '.'  --thread {threads} 2>{log}
+    '''
+
+rule snpeff:
+    input: vcf=output_dir+"/splitted/{chunk}.vcf"
+    output: vcf=output_dir+"/snpeff/{chunk}.vcf"
+    params: snpEff_db = snpEff_db
+    envmodules: "snpEff/5.1d"
+    resources :
+        mem_mb=20000
+    shell: '''
+        java -Xmx20g -jar $SNPEFF_JAR -c $SNPEFF_HOME/snpEff.config -v -no-intergenic -no INTRAGENIC -no-downstream -no-upstream -no-utr -no PROTEIN_STRUCTURAL_INTERACTION_LOCUS -no NEXT_PROT -lof -noStats {params.snpEff_db} {input} > {output}
+    '''
+
+### default output
+# genomel_28genes.intervar.txt.hg38_multianno.txt
+# genomel_28genes.intervar.txt.hg38_multianno.txt.grl_p
+# genomel_28genes.intervar.txt.hg38_multianno.txt.intervar
+
+#  after certain trouble shooting, the default InterVar db has problem:
+# -t $INTERVAR_DATA/intervardb 
+# replace it with my /home/zhuw10/git/InterVar-2.2.1/intervardb
+# switch back to $ANNOVAR_DATA from $ANNOVAR_DATA_CURRENT
+rule intervar:
+    input: vcf=output_dir+"/avinput/{chunk}.avinput"
+    output: intervar=output_dir+"/intervar/{chunk}."+genome+"_multianno.txt.intervar"
+    params: 
+        genome=genome,
+        prefix=lambda wildcards: output_dir + "/intervar/" + wildcards.chunk
+    log: "logs/intervar/{chunk}.log"
+    envmodules: "annovar/2020-06-08"
+    resources :
+        mem_mb=10000
+    shell: '''
+        /home/zhuw10/git/InterVar-2.2.1/Intervar.py -i {input} -b {params.genome} -d $ANNOVAR_DATA/{params.genome} -o {params.prefix} -t /home/zhuw10/git/InterVar-2.2.1/intervardb --table_annovar=$ANNOVAR_HOME/table_annovar.pl --convert2annovar=$ANNOVAR_HOME/convert2annovar.pl --annotate_variation=$ANNOVAR_HOME/annotate_variation.pl 2>{log}
+    '''
+
+rule call_plp:
+    input: 
+        annovar = output_dir+"/annovar/{chunk}."+genome+"_multianno.txt",
+        intervar= output_dir+"/intervar/{chunk}."+genome+"_multianno.txt.intervar",
+        snpeff  = output_dir+"/snpeff/{chunk}.vcf"
+    output:
+        txt = output_dir+"/plp/{chunk}.plp.txt",
+        slim = output_dir+"/plp/{chunk}.plp_slim.txt"
+    resources :
+        mem_mb=10000
+    conda: "envs/plp.yaml"
+    script: "scripts/Call_patho.R"
+
+rule CI_001: 
+    input: output_dir+"/plp/{chunk}.plp.txt"
+    output: output_dir+"/CI_001/{chunk}.txt"
+    resources :
+        mem_mb=4000
+    envmodules: "csvkit/1.0.7"
+    shell: '''
+        csvsql --query "select vid, [Gene.refGene] from '`basename {input} .txt`' where (popmax_freq IS NULL or popmax_freq < 0.001 )  AND ([PLP.intervar] = 1 or [PLP.clinvar]= 1) " {input} > {output}
+
+    '''
+
+rule JU_001: 
+    input: output_dir+"/plp/{chunk}.plp.txt"
+    output: output_dir+"/JU_001/{chunk}.txt"
+    resources :
+        mem_mb=4000
+    envmodules: "csvkit/1.0.7"
+    shell: '''
+        csvsql --query "select vid, [Gene.refGene] from '`basename {input} .txt`' where (popmax_freq IS NULL or popmax_freq < 0.001 )  AND ([PLP.jung]= 1) " {input} > {output}
+
+    '''
+
+rule proxy_001: 
+    input: output_dir+"/plp/{chunk}.plp.txt"
+    output: output_dir+"/proxy_001/{chunk}.txt"
+    resources :
+        mem_mb=4000
+    envmodules: "csvkit/1.0.7"
+    shell: '''
+        csvsql --query "select vid, [Gene.refGene] from '`basename {input} .txt`' where (popmax_freq IS NULL or popmax_freq < 0.001 )  AND [PLP.jung] = 0 AND (impact='LOW' AND [ExonicFunc.refGene] = 'synonymous SNV' ) " {input} > {output}
+
+    '''
+
+rule merge_txt:
+    input: expand(output_dir+"/{{set}}/{chunk}.txt", chunk=CHUNKS)
+    output: output_dir+"/merged_txt/{set}.txt"
+    resources :
+        mem_mb=10000
+    envmodules: "csvkit/1.0.7"
+    shell: '''
+        csvstack -t {input} | csvformat -T > {output}
+    '''
