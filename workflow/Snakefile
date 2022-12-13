@@ -42,7 +42,8 @@ snpEff_db   = config["snpEff_db"]
 
 IDS, = glob_wildcards(vcf_input_dir + "/{id}.vcf.gz")
 CHUNKS =[str(x).zfill(5) for x in range(split_total)]
-
+MAFS=["0.01", "0.005", "0.001"]
+VAR_SETS=["proxy", "syn", "low", "CI", "JU"]
 
 rule all:
     input:
@@ -52,9 +53,8 @@ rule all:
         expand(output_dir+"/snpeff/{chunk}.vcf", chunk=CHUNKS),
         expand(output_dir+"/intervar/{chunk}."+genome+"_multianno.txt.intervar", chunk=CHUNKS),
         expand(output_dir+"/plp/{chunk}.plp_slim.txt", chunk=CHUNKS),
-        output_dir+"/merged_txt/CI_001.txt",
-        output_dir+"/merged_txt/JU_001.txt",
-        output_dir+"/merged_txt/proxy_001.txt"
+        expand(output_dir+"/merged_txt/{var_set}_{maf}.txt", var_set=VAR_SETS, maf=MAFS)
+       
 
 ### slow and need provide option to skip it 
 rule prep: 
@@ -198,42 +198,69 @@ rule call_plp:
     conda: "envs/plp.yaml"
     script: "scripts/Call_patho.R"
 
-rule CI_001: 
+rule CI: 
     input: output_dir+"/plp/{chunk}.plp.txt"
-    output: output_dir+"/CI_001/{chunk}.txt"
+    output: output_dir+"/CI_{maf}/{chunk}.txt"
     resources :
         mem_mb=4000
     envmodules: "csvkit/1.0.7"
+    params: min_freq= "{maf}"
     shell: '''
-        csvsql --query "select vid, [Gene.refGene] from '`basename {input} .txt`' where (popmax_freq IS NULL or popmax_freq < 0.001 )  AND ([PLP.intervar] = 1 or [PLP.clinvar]= 1) " {input} > {output}
+        csvsql --query "select vid, [Gene.refGene] from '`basename {input} .txt`' where (popmax_freq IS NULL or popmax_freq < {params.min_freq} )  AND ([PLP.intervar] = 1 or [PLP.clinvar]= 1) " {input} > {output}
 
     '''
 
-rule JU_001: 
+rule JU: 
     input: output_dir+"/plp/{chunk}.plp.txt"
-    output: output_dir+"/JU_001/{chunk}.txt"
+    output: output_dir+"/JU_{maf}/{chunk}.txt"
     resources :
         mem_mb=4000
     envmodules: "csvkit/1.0.7"
+    params: min_freq= "{maf}"
     shell: '''
-        csvsql --query "select vid, [Gene.refGene] from '`basename {input} .txt`' where (popmax_freq IS NULL or popmax_freq < 0.001 )  AND ([PLP.jung]= 1) " {input} > {output}
+        csvsql --query "select vid, [Gene.refGene] from '`basename {input} .txt`' where (popmax_freq IS NULL or popmax_freq < {params.min_freq} )  AND ([PLP.jung]= 1) " {input} > {output}
 
     '''
 
-rule proxy_001: 
+rule proxy: 
     input: output_dir+"/plp/{chunk}.plp.txt"
-    output: output_dir+"/proxy_001/{chunk}.txt"
+    output: output_dir+"/proxy_{maf}/{chunk}.txt"
     resources :
         mem_mb=4000
     envmodules: "csvkit/1.0.7"
+    params: min_freq= "{maf}"
     shell: '''
-        csvsql --query "select vid, [Gene.refGene] from '`basename {input} .txt`' where (popmax_freq IS NULL or popmax_freq < 0.001 )  AND [PLP.jung] = 0 AND (impact='LOW' AND [ExonicFunc.refGene] = 'synonymous SNV' ) " {input} > {output}
+        csvsql --query "select vid, [Gene.refGene] from '`basename {input} .txt`' where (popmax_freq IS NULL or popmax_freq < {params.min_freq} )  AND [PLP.jung] = 0 AND (impact='LOW' OR [ExonicFunc.refGene] = 'synonymous SNV' ) " {input} > {output}
+
+    '''
+
+rule low: 
+    input: output_dir+"/plp/{chunk}.plp.txt"
+    output: output_dir+"/low_{maf}/{chunk}.txt"
+    resources :
+        mem_mb=4000
+    envmodules: "csvkit/1.0.7"
+    params: min_freq= "{maf}"
+    shell: '''
+        csvsql --query "select vid, [Gene.refGene] from '`basename {input} .txt`' where (popmax_freq IS NULL or popmax_freq < {params.min_freq} )  AND [PLP.jung] = 0 AND (impact='LOW') " {input} > {output}
+
+    '''
+
+rule syn: 
+    input: output_dir+"/plp/{chunk}.plp.txt"
+    output: output_dir+"/syn_{maf}/{chunk}.txt"
+    resources :
+        mem_mb=4000
+    envmodules: "csvkit/1.0.7"
+    params: min_freq= "{maf}"
+    shell: '''
+        csvsql --query "select vid, [Gene.refGene] from '`basename {input} .txt`' where (popmax_freq IS NULL or popmax_freq < {params.min_freq} )  AND [PLP.jung] = 0 AND ([ExonicFunc.refGene] = 'synonymous SNV' ) " {input} > {output}
 
     '''
 
 rule merge_txt:
-    input: expand(output_dir+"/{{set}}/{chunk}.txt", chunk=CHUNKS)
-    output: output_dir+"/merged_txt/{set}.txt"
+    input: expand(output_dir+"/{{set}}_{{maf}}/{chunk}.txt", chunk=CHUNKS)
+    output: output_dir+"/merged_txt/{set}_{maf}.txt"
     resources :
         mem_mb=10000
     envmodules: "csvkit/1.0.7"
