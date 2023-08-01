@@ -1,0 +1,12 @@
+# given a list vcf file under the folder
+vcf_input_dir: "/data/zhuw10/ukbb/dnanexus/batch3/pvcf"
+
+### output_dir is sufficient to keep data unique and output_prefix is to for the merged file
+output_dir: "/data/zhuw10/ukbb/dnanexus/batch3"
+output_prefix: "new_7gene"
+ref: "/data/zhuw10/ukbb/ref/GRCh38_full_analysis_set_plus_decoy_hla.fa"
+genome: "hg38"
+split_total: 10
+
+# for GRCh38.99 
+snpEff_db: "GRCh38.99" 
