@@ -167,6 +167,15 @@ Besides, there are several parameters defined in the configure file.
 
 ---
 
+## Get started
+Assuming you have git clone this repo under $PLP_prediction_workflow, and provided input files and the configure file properly, it is simple to launch the workflow at Biowulf using the wrapper script *run_it2.sh*:
+```bash
+cd $PLP_prediction_workflow/workflow
+
+sbatch -J gnomad --export=ALL --mem=12g -p norm -o ${PWD}/slurm-%j.out -e ${PWD}/slurm-%j.err --time=24:00:00 --wrap='./run_it2.sh  ../config/gnomad_config.yaml'
+```
+
+---
 ## Running time.
 
 The running time is an important factor to be considered in any NGS tools.  Given *split_total* like 100, gnomAD annotation can be accomplished in hours. 
