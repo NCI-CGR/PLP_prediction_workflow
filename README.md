@@ -135,7 +135,7 @@ genome: "hg38"
 split_total: 100
 
 # for GRCh38.99 
-snpEff_db: "GRCh37.87" 
+snpEff_db: "GRCh38.99" 
 ```
 
 + Example of the configure file of hg19
