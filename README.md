@@ -23,7 +23,7 @@ The overall process is as described in the diagram below:
 Users may have a look of the R script [Call_patho.R]( workflow/scripts/Call_patho.R) to understand how P/LP variants are actually predicted.
 
 
-There are several steps taking in this Snakemake workflow as outlined in [this diagram](./workflows/plp_dag_expand.pdf):
+There are several steps taking in this Snakemake workflow as outlined in [this diagram](./workflow/plp_dag_expand.pdf):
 + Merge input vcf files into one file; 
   + :bookmark: Only the first 8 columns of the VCF files are used so as to reduce the file size and facilitate the subsequent data processing.
 + Split vcf files into multiple parts to speed up the annotation process.  
