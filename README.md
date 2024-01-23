@@ -2,182 +2,219 @@
 
 ## Introduction 
 
-This new Snakemake workflow is to annotate variants using [AutoGVP](https://github.com/diskin-lab-chop/AutoGVP/tree/main).
+This new Snakemake workflow is to annotate variants using [AutoGVP](https://github.com/diskin-lab-chop/AutoGVP/tree/main).  It splits the input vcf files in multiple chunks as the [original pipeline](https://github.com/NCI-CGR/PLP_prediction_workflow/tree/main).  The main AutoGVP worflow followed Jung's bash script (/data/CGB_share/autoGVP_submit.sh @ biowulf).
 
 ![](img/autogvp.png)
 
 
-
-Users may have a look of the R script [Call_patho.R]( workflow/scripts/Call_patho.R) to understand how P/LP variants are actually predicted.
-
-
-There are several steps taking in this Snakemake workflow as outlined in [this diagram](./workflow/plp_dag_expand.pdf):
-+ Merge input vcf files into one file; 
-  + :bookmark: Only the first 8 columns of the VCF files are used so as to reduce the file size and facilitate the subsequent data processing.
-+ Split vcf files into multiple parts to speed up the annotation process.  
-+ Annotate each split part by *InterVar*, *Annovar* and *snpEff*.
-+ Call P/LP variants using the R script [Call_patho.R]( workflow/scripts/Call_patho.R).
-  + There are two output files generated in this step: *{chunk}.plp.txt* and *{chunk}.plp_slim.txt*
-    +  All the essential  output from the variant annotators are kept in the *plp.txt* file (see [this example](data/output/00027.plp.tsv)).
-    +  The plp_slim.txt file has only 8 columns (see [this example](data/output/00027.plp_slim.tsv)):
-    
-
-| vid              | Gene.refGene   | popmax_freq | PLP.clinvar | PLP.intervar | PLP.impactHigh | PLP.genomel | PLP.m_sp | PLP.jung |
-| ---------------- | -------------- | ----------- | ----------- | ------------ | -------------- | ----------- | -------- | -------- |
-| 4:186317998:C:A  | ANKRD37;LRP2BP | 0           | FALSE       | FALSE        | FALSE          | FALSE       | FALSE    | FALSE    |
-| 4:186318030:C:T  | ANKRD37;LRP2BP | 0           | FALSE       | FALSE        | FALSE          | FALSE       | FALSE    | FALSE    |
-| 4:186318071:G:A  | ANKRD37;LRP2BP | 1.00E-04    | FALSE       | FALSE        | FALSE          | FALSE       | FALSE    | FALSE    |
-| 4:186318186:G:A  | LRP2BP         | 0           | FALSE       | FALSE        | FALSE          | FALSE       | FALSE    | FALSE    |
-| 4:186318261:G:A  | LRP2BP         | 8.00E-04    | FALSE       | FALSE        | FALSE          | FALSE       | FALSE    | FALSE    |
-| 4:186318265:A:G  | LRP2BP         | 6.84E-05    | FALSE       | FALSE        | FALSE          | FALSE       | FALSE    | FALSE    |
-| 4:186318282:T:TG | LRP2BP         | 0           | FALSE       | FALSE        | FALSE          | FALSE       | FALSE    | FALSE    |
-
-
-+ Below is the description of the columns in the slim file
-
-| Column ID      | Description                                                                                                      |
-| -------------- | ---------------------------------------------------------------------------------------------------------------- |
-| vid            | Variant ID in the format of CHROM:POS:REF:ALT                                                                    |
-| Gene.refGene   | Gene ID                                                                                                          |
-| popmax_freq    | Maximum AF among the subpopulations (derived from "AF_popmax" and "non_cancer_AF_popmax")                        |
-| PLP.clinvar    | P/LP defined by ClinVar                                                                                          |
-| PLP.intervar   | P/LP defined by InterVar                                                                                         |
-| PLP.impactHigh | P/LP defined by high impact                                                                                      |
-| PLP.genomel    | P/LP defined ***(impact == 'HIGH') \| (impact == "MODERATE" & Polyphen2_HDIV_pred == 'D')***                           |
-| PLP.m_sp       | P/LP defined as Damaging missense and/or splite site mutations                                                   |
-| PLP.jung       | P/LP defined by ***PLP.clinvar \| PLP.intervar \| PLP.impactHigh \| (intervar=="Uncertain significance" & PLP.m_sp)*** |
-
-
 ---
 
-## Dependencies
-### Snakemake (Version 7.3.7+)
-Even though Snakemake module is available at Biowulf, a conda installed Snakemake is recommend. In this study, Snakemake (Version 7.3.7) was used. 
+## Methods
+As the orignal workflow has not be designed and tested for hg19, we made some minor revisios in certain steps. 
 
-### Conda (Version 4.12.0)
-Conda is also used in the workflow to create a working environment to call P/LP using R.
-+ workflow/envs/plp.yaml
-```yml
-channels:
-  - conda-forge
-dependencies:
-  - r-base =4.2.1
-  - r-bigreadr =0.2.4
-  - r-rlang =1.0.6
-  - r-tidyverse =1.3.2
-```
-
-### Biowulf modules
-This workflow has taken full advantage of the modules installed at Biowulf (non-biowulf users may use conda instead): 
-+ bcftools/1.13
-+ annovar/2020-06-08
-+ snpEff/5.1d
-+ csvkit/1.0.7
-
-### InterVar (Version 2.2.1)
-By the time of development, the latest module of intervar at Biowulf is Version 2.1.3.  So, I had installed InterVar (Version 2.2.1) locally, with the InterVar database under /home/zhuw10/git/InterVar-2.2.1/.   
+### The major components of the workflow
++ [Configure file](config/genomel_config.yaml)
++ [Snakefile](workflow/Snakefile)
++ [The wrapper script to launch the workflow at Biowulf](./run_it2.sh)
 
 ```bash
-/home/zhuw10/git/InterVar-2.2.1/Intervar.py -i {input} -b {params.
-genome} -d $ANNOVAR_DATA/{params.genome} -o {params.prefix} -t /home/zhuw10/git/InterVar-2.2.1/intervardb --table_annovar=$ANNOVAR_HOME/table_annova
-r.pl --convert2annovar=$ANNOVAR_HOME/convert2annovar.pl --annotate_variation=$ANNOVAR_HOME/annotate_variation.pl 2>{log}
+#!/bin/bash
+#SBATCH --time=2-00:00:00
+#SBATCH -o ${PWD}/snakemake.%j.out
+#SBATCH -e ${PWD}/snakemake.%j.err
+
+
+module load singularity
+
+mkdir -p TMP
+export TMPDIR=TMP
+
+# conda activate snakemake
+snakemake --profile workflow/profiles/biowulf --verbose -p --use-conda --jobs 400 --default-resources "mem_mb=10000  " --use-envmodules --use-singularity --singularity-args " -B /vf,/spin1,/data,/fdb,/gpfs "  --latency-wait 120 -T 0 -s workflow/Snakefile --configfile $1
 ```
 
-Currently, the module "intervar/2.2.1" is available at Biowulf, so users may just update: */home/zhuw10/git/InterVar-2.2.1/Intervar.py* and */home/zhuw10/git/InterVar-2.2.1/intervardb* accordingly:
+### Layout of the workspace and the worklfow
++ /data/GenoMEL/AutoGVP/AutoGVP/data
+  + Homo_sapiens_assembly19.fasta
+  + clinvar_20231230.vcf.gz
+  + clinvar_20231230.vcf.gz
+  + variant_summary.txt.gz
+  + ClinVar-selected-submissions.tsv
++ /data/GenoMEL/PLP_prediction_workflow [working directory]
+  + run_it2.sh
+  + config/genomel_config.yaml
+  + workflow/Snakefile
+  + output/
+    + merge_call
+
+
+### Revisions to run AutoGVP
+#### Input VCF files
+There is no special requirement by AutoGVP for the VCF input files.  We removed the original annotation and the format columns to reduce file size and avoid any conflict due to the existing annotations.  This step has been builted in the workflow.
+```bash
+bcftools view -e 'ALT="*"' -Ou {input} |bcftools norm -m-both -Ou --threads {threads} | bcftools norm -f {params.ref} | bcftools annotate -Ou -x ID  -I +"%CHROM:%POS:%REF:%ALT" --threads {threads} | bcftools annotate -Oz -x FORMAT,^INFO/AC,^INFO/AF,^INFO/AN -o {output.vcf}
+      tabix -p vcf {output.vcf}
+```
+
+#### Vep 
+The module "VEP/104" is used for the Vep annotation at Biowulf, as suggested by Jung.  We introduced parameter *{params.grc}* ("GRCh37" is used for hg19):
++ --fasta $VEP_CACHEDIR/{params.grc}.fa
++ --assembly {params.grc}
+
+#### Intervar 
+In this step, we used locally installed InterVar for the standard configure setting (where instervar databases under intervardb were used):
++ [/home/zhuw10/git/InterVar-2.2.1/config.ini](./data/intervar_config.ini) 
+```ini
+[InterVar]
+buildver = hg19 
+# hg19 
+inputfile = example/ex1.avinput
+# the inputfile and the path  example/ex1.avinput hg19_clinvar_20151201.avinput
+# tab-delimited will be better for including the other information
+inputfile_type = AVinput
+# the input file type VCF(vcf file with single sample),AVinput,VCF_m(vcf file with multiple samples)
+outfile = example/myanno
+# the output file location and prefix of output file
+database_intervar = intervardb
+# the database location/dir for Intervar
+lof_genes = %(database_intervar)s/PVS1.LOF.genes
+pm1_domain = %(database_intervar)s/PM1_domains_with_benigns
+mim2gene = %(database_intervar)s/mim2gene.txt
+# morbidmap = %(database_intervar)s/morbidmap.txt
+# disabled for BP5 as reviewer suggested. for OMIM, only mim2gene.txt needed. 
+mim_recessive = %(database_intervar)s/mim_recessive.txt
+mim_domin = %(database_intervar)s/mim_domin.txt
+mim_adultonset = %(database_intervar)s/mim_adultonset.txt
+mim_pheno = %(database_intervar)s/mim_pheno.txt
+mim_orpha = %(database_intervar)s/mim_orpha.txt
+#orpha = %(database_intervar)s/orpha.txt
+orpha = %(database_intervar)s/orpha.txt.utf8
+knowngenecanonical = %(database_intervar)s/knownGeneCanonical.txt
+pp2_genes = %(database_intervar)s/PP2.genes
+bp1_genes = %(database_intervar)s/BP1.genes
+ps1_aa = %(database_intervar)s/PS1.AA.change.patho
+# do not add the builder version
+ps4_snps = %(database_intervar)s/PS4.variants
+# do not add the builder version
+bs2_snps = %(database_intervar)s/BS2_hom_het
+# do not add the builder version
+exclude_snps = %(database_intervar)s/ext.variants
+# do not add the builder version,the variant in this list will not check the frequency, it is causal.
+# the list should be tab-delimited,format like this:
+# Chr Pos Ref_allele Alt_allele
+evidence_file = None
+# add your own Evidence file for each Variant:
+# evidence file as tab-delimited,format like this:
+# Chr Pos Ref_allele Alt_allele  PM1=1;BS2=1;PP2=0
+disorder_cutoff = 0.01
+#It is for BS1: Allele frequency is greater than expected for disorder
+[InterVar_Bool]
+onetranscript = TRUE 
+# TRUE or FALSE: print out only one transcript for exonic variants (default: FALSE/all transcripts)
+otherinfo = FALSE              
+# TRUE or FALSE: print out otherinfo (infomration in fifth column in queryfile,default: FALSE)
+# this option only perform well with AVinput file,and the other information only can be put in the fifth column.  The information in >5th column will be lost.
+# When input as  VCF or VCF_m files with otherinfo option, only het/hom will be kept, depth and qual will be lost.
+[Annovar]
+# the ANNOVAR version should be >=  2016-02-01, older verions of ANNOVAR will bring problems.
+convert2annovar = ./convert2annovar.pl
+#convert input file to annovar format
+table_annovar = ./table_annovar.pl
+# table_annovar.pl of file location
+annotate_variation = ./annotate_variation.pl
+# annotate_variation of file location
+database_locat = humandb 
+# the database location/dir from annnovar   check if database file exists
+#database_names = refGene esp6500siv2_all 1000g2015aug avsnp147 dbnsfp33a clinvar_20190305 gnomad_genome dbscsnv11 dbnsfp31a_interpro rmsk ensGene knownGene
+database_names = refGene esp6500siv2_all 1000g2015aug avsnp147 dbnsfp42a clinvar_20210501 gnomad_genome dbscsnv11 rmsk ensGene knownGene
+# specify the database_names from ANNOVAR or UCSC
+[Other]
+current_version = Intervar_20210727 
+# pipeline version
+public_dev = https://github.com/WGLab/InterVar/releases
+```
+
+In the workflow, we had introduced the setting from the module *annovar* to reduce the dependencies on the local settings at Biowulf:
+```bash
+/home/zhuw10/git/InterVar-2.2.1/Intervar.py -i {input.vcf} --input_type=VCF -o {params.prefix} -b {params.genome} -t /home/zhuw10/git/InterVar-2.2.1/intervardb -d $ANNOVAR_DATA/{params.genome} --table_annovar=$ANNOVAR_HOME/table_annovar.pl --convert2annovar=$ANNOVAR_HOME/convert2annovar.pl --annotate_variation=$ANNOVAR_HOME/annotate_variation.pl
+```
+
+#### autopvs1
+
+We made a revision at /data/CGB_share/autopvs1_wz/autoPVS1_from_VEP_vcf.py to introdue genome_version option back to the python script:
 
 ```bash
-module show  intervar/2.2.1
-----------------------------------------------------------------------
-   /usr/local/lmod/modulefiles/intervar/2.2.1.lua:
-----------------------------------------------------------------------
-help([[This module sets up the environment for using InterVar.
-]])
-whatis("InterVar: Clinical Interpretation of Genetic Variants")
-whatis("Version: 2.2.1")
-setenv("INTERVAR_HOME","/usr/local/apps/intervar")
-setenv("INTERVAR_BIN","/usr/local/apps/intervar/2.2.1/bin")
-setenv("INTERVAR_TEST","/usr/local/apps/intervar/TEST_DATA/example")
-setenv("INTERVAR_DATA","/usr/local/apps/intervar/DOWNLOADS/InterVar")
-prepend_path("PATH","/usr/local/apps/intervar/2.2.1/bin")
-prepend_path("PATH","/usr/local/apps/annovar/2020-06-08")
-setenv("ANNOVAR_HOME","/usr/local/apps/annovar/2020-06-08")
-setenv("ANNOVAR_DATA","/fdb/annovar/2020-06-08")
-setenv("ANNOVAR_DATA_CURRENT","/fdb/annovar/current")
+python /data/CGB_share/autopvs1_wz/autoPVS1_from_VEP_vcf.py --genome_version {params.genome} --vep_vcf {input.vcf} > {output}
 ```
 
----
+Besides, we had copied the reference genomes to the folder /data/CGB_share/autopvs1_wz/data, and revised the file [config.ini](data/autopvs1_config.ini) accordingly for autopvs1.
 
-## Input files and configuration
-All input files are configured in one yaml file for the workflow:
+#### AnnoVar
+We used the annovar module installed at Biowulf with the data sets  "--protocol *gnomad211_exome*,*gnomad211_genome*", which are opted for the WES data on hg19.
 
-+ Example of the configure file of hg38
-```yml
-# given a list vcf file under the folder
-vcf_input_dir: "/data/zhuw10/ukbb/dnanexus/pvcf2"
+:bookmark: this setting needs to be customized for other studies in the future.
 
-### output_dir is sufficient to keep data unique and output_prefix is to for the merged file
-output_dir: "/data/zhuw10/ukbb/dnanexus/batch2"
-output_prefix: "ukb_batch2"
-ref: "/data/zhuw10/ukbb/ref/GRCh38_full_analysis_set_plus_decoy_hla.fa"
-genome: "hg38"
-split_total: 100
+#### Prepare ClinVar data for the use of hg19
+To run AutoGVP, latest ClinVar data need to be downloaed and prepared. 
 
-# for GRCh38.99 
-snpEff_db: "GRCh38.99" 
-```
-
-+ Example of the configure file of hg19
-```yml
-# given a list vcf file under the folder
-vcf_input_dir: "/data/zhuw10/ukbb/data/genomel_vcf"
-
-### output_dir is sufficient to keep data unique and output_prefix is to for the merged file
-output_dir: "/data/zhuw10/ukbb/dnanexus/genomel_out"
-output_prefix: "prj1"
-ref: "/data/zhuw10/ukbb/ref/Homo_sapiens_assembly19.fasta"
-genome: "hg19"
-split_total: 100
-
-# for GRCh38.99 
-snpEff_db: "GRCh37.87" 
-```
-
-Overall, there are several input files are required:
-+ VCF input files under the specified folder *vcf_input_dir*.
-+ The reference genome (specified by *ref*) in the fasta format with *fai* index.
-
-Besides, there are several parameters defined in the configure file.
-+ output_dir, specified the output folder.
-+ genome, specified the resource bundle used by annovar and intervar.
-+ output_prefix, the vcf filed will be processed and merged as one file output_dir/{output_prefix}.vcf.gz.
-+ snpEff_db, the snpEff database used in the snpEff annotation.  It may need to be updated if new database is available.
-+ split_total, specified the number of parts to be split and processed in parallel. 
-
----
-
-## Get started
-Assuming you have git clone this repo under $PLP_prediction_workflow, and provided input files and the configure file properly, it is simple to launch the workflow at Biowulf using the wrapper script *run_it2.sh*:
 ```bash
-cd $PLP_prediction_workflow/workflow
+cd /data/GenoMEL/AutoGVP
+git clone git@github.com:diskin-lab-chop/AutoGVP.git
 
-sbatch -J gnomad --export=ALL --mem=12g -p norm -o ${PWD}/slurm-%j.out -e ${PWD}/slurm-%j.err --time=24:00:00 --wrap='./run_it2.sh  ../config/gnomad_config.yaml'
+
+wget -nc -e robots=off --reject "index.html*" -r --level=1  -nd -np -A "clinvar_20231230.vcf.gz*" -P data/ https://ftp.ncbi.nlm.nih.gov/pub/clinvar/vcf_GRCh37/
+
+wget https://ftp.ncbi.nlm.nih.gov/pub/clinvar/tab_delimited/submission_summary.txt.gz -P data/
+
+wget https://ftp.ncbi.nlm.nih.gov/pub/clinvar/tab_delimited/variant_summary.txt.gz -P data/
+
+ls -al data/
+total 514410
+drwxr-s--- 2 zhuw10 GenoMEL      4096 Jan  4 11:02 .
+drwxr-sr-x 2 zhuw10 GenoMEL      4096 Jan  4 10:56 ..
+-rw-r--r-- 1 zhuw10 GenoMEL  91217146 Dec 31 02:44 clinvar_20231230.vcf.gz
+-rw-r--r-- 1 zhuw10 GenoMEL       126 Dec 31 02:44 clinvar_20231230.vcf.gz.md5
+-rw-r--r-- 1 zhuw10 GenoMEL    522144 Dec 31 02:44 clinvar_20231230.vcf.gz.tbi
+-rw-r--r-- 1 zhuw10 GenoMEL 211364657 Dec 30 19:27 submission_summary.txt.gz
+-rw-r--r-- 1 zhuw10 GenoMEL 223649945 Dec 31 00:33 variant_summary.txt.gz
+
+### run select-clinVar-submissions_hg19.R
+# to have ClinVar-selected-submissions.tsv
+module load singularity
+singularity pull docker://pgc-images.sbgenomics.com/naqvia/autogvp:latest
+
+singularity exec -B $PWD:/share  --pwd /share autogvp_latest.sif Rscript ./AutoGVP/scripts/select-clinVar-submissions_hg19.R --variant_summary data/variant_summary.txt.gz --submission_summary data/submission_summary.txt.gz --outdir data/
 ```
 
----
-## Running time.
+#### Run AutoGVP
+After all the input files prepared for the use of hg19, AutoGVP is ready to be launched via container *docker://pgc-images.sbgenomics.com/naqvia/autogvp:latest*
 
-The running time is an important factor to be considered in any NGS tools.  Given *split_total* like 100, gnomAD annotation can be accomplished in hours. 
-
----
-
-## Tips
-This workflow is dedicated to the GenoMEL project.  Some steps might not be needed for most uses, for example, like *low*, *proxy* and *syn*. I kept them here as examples about how to use *csvkit* to filter the candidate variants from *plp.txt* files in the way your may prefer:
+#### Output
+The final merged tab-delimited files are generated under output. The format is as [described](https://github.com/diskin-lab-chop/AutoGVP/tree/main#autogvp-output), with one additional column "vid" (e.g., 1:12198:G:C). 
 ```bash
-### Identify synonymous variants under the AF specified by {params.min_freq}
- csvsql --query "select vid, [Gene.refGene] from '`basename {input} .txt`' where (popmax_freq IS NULL or popmax_freq < {params.min_freq} )  AND [PLP.jung] = 0 AND ([ExonicFunc.refGene] = 'synonymous SNV' ) " {input} > {output}
+tree output/merge_call/
+output/merge_call/
+├── genomel.autogvp_abridged.tsv
+└── genomel.autogvp_full.tsv
 
-### Identify P/LP as Jung suggested under the AF specified by {params.min_freq}
-csvsql --query "select vid, [Gene.refGene] from '`basename {input} .txt`' where (popmax_freq IS NULL or popmax_freq < {params.min_freq} )  AND ([PLP.jung]= 1) " {input} > {output}
 
-``` 
+```
 
+
+---
+
+### Annotation data sources used in this analysis.
+
++ Table 1. Comparison of the annotation tools used between AutoGVP and the original P/LP prediction workflow.
+  
+| Annotation Tool | AutoGVP                          | Original P/LP prediction pipeline                                                                                                                                                       |
+|-----------------|----------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| VEP             | VEP/104 (/fdb/VEP/104/cache)     | NA                                                                                                                                                                                      |
+| snpEff          | NA                               | snpEff/5.1d                                                                                                                                                                             |
+| annovar         | annovar/2020-06-08               | annovar/2020-06-08                                                                                                                                                                      |
+|   --protocols   | gnomad211_exome,gnomad211_genome | refGene,knownGene,ensGene,exac03nontcga,gnomad211_exome,gnomad211_genome,esp6500siv2_all,1000g2015aug_all,clinvar_20210123,dbnsfp41a,dbscsnv11,spliceai_filtered,spidex,cosmic92_coding |
+| InterVar        | Version 2.2.1                    | Version 2.2.1                                                                                                                                                                           |
+| ClinVar         | clinvar_20231230                 | clinvar_20210123 (via annovar)                                                                                                                                                          |
+| AutoPSV1        | v2.0-2-g7fb1be9                  | NA                                                                                                                                                                                      |
+
+:bookmark: It is noted that annotation approaches are significantly different between the two workflows, but the same version of InterVar were used.  One of the differences to be highlighted is the data source of the ClinVar: *clinvar_20210123* was used and annotated variants via AnnoVar, whereas *clinvar_20231230* was used directly by *AutoGVP*.

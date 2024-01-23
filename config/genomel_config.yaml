@@ -4,7 +4,7 @@ vcf_input_dir: "/data/zhuw10/ukbb/data/genomel_vcf"
 ### output_dir is sufficient to keep data unique and output_prefix is to for the merged file
 output_dir: "/data/GenoMEL/PLP_prediction_workflow/output"
 output_prefix: "genomel"
-ref: "/data/zhuw10/ukbb/ref/Homo_sapiens_assembly19.fasta"
+ref: "/data/GenoMEL/AutoGVP/data/Homo_sapiens_assembly19.fasta"
 genome: "hg19"
 genome_GRC: "GRCh37"
 clinvar:
