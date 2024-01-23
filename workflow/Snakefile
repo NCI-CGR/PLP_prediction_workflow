@@ -34,49 +34,38 @@ report: 'report/workflow.rst'
 # load import variables from the config file
 vcf_input_dir = config["vcf_input_dir"]
 output_dir    = config["output_dir"]
-output_prefix = config["output_prefix"]
 ref           = config["ref"]
+output_prefix = config["output_prefix"]
 genome        = config["genome"]
+genome_GRC    = config["genome_GRC"]
 split_total   = config["split_total"] 
-snpEff_db   = config["snpEff_db"]
+
 
 IDS, = glob_wildcards(vcf_input_dir + "/{id}.vcf.gz")
 CHUNKS =[str(x).zfill(5) for x in range(split_total)]
-MAFS=["0.01", "0.005", "0.001"]
-VAR_SETS=["proxy", "syn", "low", "CI", "JU"]
+
 
 rule all:
     input:
-        # output_dir+"/"+output_prefix + ".vcf.gz",
-        # expand(output_dir+"/splitted/{chunk}.vcf", chunk=CHUNKS),
-        expand(output_dir+"/annovar/{chunk}."+genome+"_multianno.txt", chunk=CHUNKS),
-        expand(output_dir+"/snpeff/{chunk}.vcf", chunk=CHUNKS),
-        expand(output_dir+"/intervar/{chunk}."+genome+"_multianno.txt.intervar", chunk=CHUNKS),
-        expand(output_dir+"/plp/{chunk}.plp_slim.txt", chunk=CHUNKS),
-        expand(output_dir+"/merged_txt/{var_set}_{maf}.txt", var_set=VAR_SETS, maf=MAFS)
-       
+        # expand(output_dir + "/autogvp/{chunk}-autogvp-annotated-full.tsv", chunk=["00000","00001","00002","00003","00004"]),
+        expand(output_dir + "/merge_call/" + output_prefix + ".autogvp_{set}.tsv", set=["full", "abridged"])
 
-### slow and need provide option to skip it 
+## slow and need provide option to skip it 
 rule prep: 
     input: vcf_input_dir + "/{id}.vcf.gz"
-    output: temp(output_dir + "/prep/{id}.vcf")
+    output: 
+        vcf = output_dir + "/prep/{id}.vcf.gz",
+        tbi=output_dir + "/prep/{id}.vcf.gz.tbi"
     threads: 8
     resources :
         mem_mb=50000
     envmodules: "bcftools/1.13"
     params: ref=ref
     shell: '''
-        bcftools view -e 'ALT="*"' -Ou {input} |bcftools norm -m-both -Ou --threads {threads} | bcftools norm -f {params.ref} | bcftools annotate -Oz -x ID  -I +"%CHROM:%POS:%REF:%ALT" --threads {threads} | zcat | cut -f 1-8 > {output} 
+        bcftools view -e 'ALT="*"' -Ou {input} |bcftools norm -m-both -Ou --threads {threads} | bcftools norm -f {params.ref} | bcftools annotate -Ou -x ID  -I +"%CHROM:%POS:%REF:%ALT" --threads {threads} | bcftools annotate -Oz -x FORMAT,^INFO/AC,^INFO/AF,^INFO/AN -o {output.vcf}
+        tabix -p vcf {output.vcf}
     '''
 
-rule prep_gz:
-    input: output_dir + "/prep/{id}.vcf"
-    output: gz=output_dir + "/prep/{id}.vcf.gz",
-            tbi=output_dir + "/prep/{id}.vcf.gz.tbi"
-    resources :
-        mem_mb=4000
-    envmodules: "bcftools/1.13"
-    shell: "bgzip {input}; tabix -p vcf {output.gz} " 
 
 ### merge and also make some processing here
 rule merge_vcf:
@@ -121,149 +110,103 @@ rule add_vcf_header:
         cat {input.header} {input.body} > {output}
     '''
 
-rule avinput:
-    input: output_dir+"/splitted/{chunk}.txt"
-    output: output_dir+"/avinput/{chunk}.avinput"
-    resources :
-        mem_mb=4000
-    shell: '''
-        awk -v OFS="\\t" '{{if (! /^#/ && $5 != "*") print $1, $2, $2+length($4)-1, $4, $5}}' {input} > {output}
-    '''
-
-# anno/genomel_28genes.hg38_multianno.vcf
-# {prefix}.{ref}_multianno.vcf .txt
-# prefix = output_dir+"/annovar/"+output_prefix+"_{chunk}
-# .{ref}_multianno.vcf.txt
-rule annovar:
-    input: vcf=output_dir+"/avinput/{chunk}.avinput"
-    output: 
-        # vcf=output_dir+"/annovar/{chunk}."+genome+ "_multianno.vcf",
-        txt=output_dir+"/annovar/{chunk}."+genome+"_multianno.txt"            
-    envmodules: "annovar/2020-06-08"
-    log: "logs/annovar/{chunk}.log"
-    threads: 6
-    resources :
-        mem_mb=20000
-    params: 
-        genome=genome,
-        prefix=lambda wildcards: output_dir + "/annovar/" + wildcards.chunk
-    shell: '''
-        perl $ANNOVAR_HOME/table_annovar.pl  {input} $ANNOVAR_DATA/{params.genome} --buildver {params.genome} --out {params.prefix} --remove --protocol refGene,knownGene,ensGene,exac03nontcga,gnomad211_exome,gnomad211_genome,esp6500siv2_all,1000g2015aug_all,clinvar_20210123,dbnsfp41a,dbscsnv11,spliceai_filtered,spidex,cosmic92_coding --operation g,g,g,f,f,f,f,f,f,f,f,f,f,f --nastring '.'  --thread {threads} 2>{log}
-    '''
-
-rule snpeff:
-    input: vcf=output_dir+"/splitted/{chunk}.vcf"
-    output: vcf=output_dir+"/snpeff/{chunk}.vcf"
-    params: snpEff_db = snpEff_db
-    envmodules: "snpEff/5.1d"
-    resources :
-        mem_mb=20000
-    shell: '''
-        java -Xmx20g -jar $SNPEFF_JAR -c $SNPEFF_HOME/snpEff.config -v -no-intergenic -no INTRAGENIC -no-downstream -no-upstream -no-utr -no PROTEIN_STRUCTURAL_INTERACTION_LOCUS -no NEXT_PROT -lof -noStats {params.snpEff_db} {input} > {output}
-    '''
-
-### default output
-# genomel_28genes.intervar.txt.hg38_multianno.txt
-# genomel_28genes.intervar.txt.hg38_multianno.txt.grl_p
-# genomel_28genes.intervar.txt.hg38_multianno.txt.intervar
-
-#  after certain trouble shooting, the default InterVar db has problem:
-# -t $INTERVAR_DATA/intervardb 
-# replace it with my /home/zhuw10/git/InterVar-2.2.1/intervardb
-# switch back to $ANNOVAR_DATA from $ANNOVAR_DATA_CURRENT
-rule intervar:
-    input: vcf=output_dir+"/avinput/{chunk}.avinput"
-    output: intervar=output_dir+"/intervar/{chunk}."+genome+"_multianno.txt.intervar"
-    params: 
-        genome=genome,
-        prefix=lambda wildcards: output_dir + "/intervar/" + wildcards.chunk
-    log: "logs/intervar/{chunk}.log"
-    envmodules: "annovar/2020-06-08"
-    resources :
-        mem_mb=10000
-    shell: '''
-        /home/zhuw10/git/InterVar-2.2.1/Intervar.py -i {input} -b {params.genome} -d $ANNOVAR_DATA/{params.genome} -o {params.prefix} -t /home/zhuw10/git/InterVar-2.2.1/intervardb --table_annovar=$ANNOVAR_HOME/table_annovar.pl --convert2annovar=$ANNOVAR_HOME/convert2annovar.pl --annotate_variation=$ANNOVAR_HOME/annotate_variation.pl 2>{log}
-    '''
-
-rule call_plp:
+rule vep_ann:
     input: 
-        annovar = output_dir+"/annovar/{chunk}."+genome+"_multianno.txt",
-        intervar= output_dir+"/intervar/{chunk}."+genome+"_multianno.txt.intervar",
-        snpeff  = output_dir+"/snpeff/{chunk}.vcf"
+        vcf = output_dir+"/splitted/{chunk}.vcf"
     output:
-        txt = output_dir+"/plp/{chunk}.plp.txt",
-        slim = output_dir+"/plp/{chunk}.plp_slim.txt"
-    resources :
-        mem_mb=10000
-    conda: "envs/plp.yaml"
-    script: "scripts/Call_patho.R"
+        vcf = output_dir+"/vep_ann/{chunk}_VEP.vcf"
+    envmodules: "VEP/104"
+    params: 
+        grc=genome_GRC
+    shell: """
+        vep --offline --cache --dir_cache $VEP_CACHEDIR --fasta $VEP_CACHEDIR/{params.grc}.fa --refseq --use_given_ref --species homo_sapiens --assembly {params.grc} --fork 1 --xref_refseq --hgvs --hgvsg --canonical --symbol --distance 0 --exclude_predicted --flag_pick --lookup_ref --force --input_file {input.vcf} --output_file {output.vcf} --format vcf --vcf --no_stats --numbers
+    """
 
-rule CI: 
-    input: output_dir+"/plp/{chunk}.plp.txt"
-    output: output_dir+"/CI_{maf}/{chunk}.txt"
-    resources :
-        mem_mb=4000
-    envmodules: "csvkit/1.0.7"
-    params: min_freq= "{maf}"
-    shell: '''
-        csvsql --query "select vid, [Gene.refGene] from '`basename {input} .txt`' where (popmax_freq IS NULL or popmax_freq < {params.min_freq} )  AND ([PLP.intervar] = 1 or [PLP.clinvar]= 1) " {input} > {output}
+### Note to modify /home/zhuw10/git/InterVar-2.2.1/config.ini
+# database_names = refGene esp6500siv2_all 1000g2015aug avsnp147 dbnsfp42a clinvar_20210501 gnomad_genome dbscsnv11 rmsk ensGene knownGene
+rule intervar_ann:
+    input: 
+        vcf = output_dir+"/vep_ann/{chunk}_VEP.vcf"
+    output:
+        multiext(output_dir+"/intervar_ann/{chunk}_VEP." + genome + "_multianno",  ".txt", ".txt.grl_p", ".txt.intervar")
+    envmodules: "annovar"
+    params: 
+        genome=genome,
+        prefix= output_dir+"/intervar_ann/{chunk}_VEP"
+    shell: """
+        /home/zhuw10/git/InterVar-2.2.1/Intervar.py -i {input.vcf} --input_type=VCF -o {params.prefix} -b {params.genome} -t /home/zhuw10/git/InterVar-2.2.1/intervardb -d $ANNOVAR_DATA/{params.genome} --table_annovar=$ANNOVAR_HOME/table_annovar.pl --convert2annovar=$ANNOVAR_HOME/convert2annovar.pl --annotate_variation=$ANNOVAR_HOME/annotate_variation.pl
+    """
 
-    '''
+### I cannot use Jung's config.ini as
+# genome = /data/kimjua/referencegenome/GRCh38.d1.vd1.fa
+rule autopvs1:
+    input: 
+        vcf = output_dir+"/vep_ann/{chunk}_VEP.vcf"
+    output:
+        output_dir+"/autopvs1/{chunk}_autopvs1.txt"
+    envmodules: "python"
+    params: 
+        genome=genome
+    shell: """
+        python /data/CGB_share/autopvs1_wz/autoPVS1_from_VEP_vcf.py --genome_version {params.genome} --vep_vcf {input.vcf} > {output}
+    """
 
-rule JU: 
-    input: output_dir+"/plp/{chunk}.plp.txt"
-    output: output_dir+"/JU_{maf}/{chunk}.txt"
-    resources :
-        mem_mb=4000
-    envmodules: "csvkit/1.0.7"
-    params: min_freq= "{maf}"
-    shell: '''
-        csvsql --query "select vid, [Gene.refGene] from '`basename {input} .txt`' where (popmax_freq IS NULL or popmax_freq < {params.min_freq} )  AND ([PLP.jung]= 1) " {input} > {output}
+rule annovar_ann:
+    input: 
+        vcf = output_dir+"/vep_ann/{chunk}_VEP.vcf"
+    output:
+        multiext(output_dir+"/annovar_ann/{chunk}_VEP", ".avinput", "."+genome+"_multianno.txt", "."+genome+"_multianno.vcf")
+    envmodules: "annovar"
+    params: 
+        genome=genome,
+        prefix= output_dir+"/annovar_ann/{chunk}_VEP"
+    shell: """
+        perl $ANNOVAR_HOME/table_annovar.pl {input} $ANNOVAR_DATA/{params.genome} --buildver {params.genome} --out {params.prefix} --remove --protocol gnomad211_exome,gnomad211_genome --operation f,f --vcfinput
+    """
 
-    '''
+rule autogvp:
+    input:
+        vcf = output_dir+"/vep_ann/{chunk}_VEP.vcf",
+        intervar = output_dir+"/intervar_ann/{chunk}_VEP." + genome + "_multianno.txt.intervar",
+        annovar = output_dir+"/annovar_ann/{chunk}_VEP." + genome + "_multianno.txt",
+        autopvs1 = output_dir+"/autopvs1/{chunk}_autopvs1.txt",
+        clinvar_vcf = config["clinvar"]["dir"] + "/" + config["clinvar"]["vcf"],
+        selected_submission = config["clinvar"]["dir"] + "/" + config["clinvar"]["selected_submission"],
+        variant_summary = config["clinvar"]["dir"] + "/" + config["clinvar"]["variant_summary"],
+        submission_summary = config["clinvar"]["dir"] + "/" + config["clinvar"]["submission_summary"],
+        concept_ids = config["conceptIDs"]
+    output:
+        full=output_dir + "/autogvp/{chunk}-autogvp-annotated-full.tsv",
+        abridged=output_dir + "/autogvp/{chunk}-autogvp-annotated-abridged.tsv",
+    container: "docker://pgc-images.sbgenomics.com/naqvia/autogvp:latest"
+    shell: """
+        AutoGVP/run_autogvp.sh --workflow custom \
+            --vcf {input.vcf}  \
+            --intervar {input.intervar} \
+            --multianno {input.annovar} \
+            --autopvs1 {input.autopvs1} \
+            --outdir $(dirname {output.full}) \
+            --out {wildcards.chunk} \
+            --clinvar={input.clinvar_vcf} \
+            --selected_clinvar_submissions={input.selected_submission} \
+            --variant_summary={input.variant_summary} \
+            --submission_summary={input.submission_summary} \
+            --conceptIDs={input.concept_ids} \
+            --conflict_res="latest"
+    """
 
-rule proxy: 
-    input: output_dir+"/plp/{chunk}.plp.txt"
-    output: output_dir+"/proxy_{maf}/{chunk}.txt"
-    resources :
-        mem_mb=4000
-    envmodules: "csvkit/1.0.7"
-    params: min_freq= "{maf}"
-    shell: '''
-        csvsql --query "select vid, [Gene.refGene] from '`basename {input} .txt`' where (popmax_freq IS NULL or popmax_freq < {params.min_freq} )  AND [PLP.jung] = 0 AND (impact='LOW' OR [ExonicFunc.refGene] = 'synonymous SNV' ) " {input} > {output}
-
-    '''
-
-rule low: 
-    input: output_dir+"/plp/{chunk}.plp.txt"
-    output: output_dir+"/low_{maf}/{chunk}.txt"
-    resources :
-        mem_mb=4000
-    envmodules: "csvkit/1.0.7"
-    params: min_freq= "{maf}"
-    shell: '''
-        csvsql --query "select vid, [Gene.refGene] from '`basename {input} .txt`' where (popmax_freq IS NULL or popmax_freq < {params.min_freq} )  AND [PLP.jung] = 0 AND (impact='LOW') " {input} > {output}
-
-    '''
-
-rule syn: 
-    input: output_dir+"/plp/{chunk}.plp.txt"
-    output: output_dir+"/syn_{maf}/{chunk}.txt"
-    resources :
-        mem_mb=4000
-    envmodules: "csvkit/1.0.7"
-    params: min_freq= "{maf}"
-    shell: '''
-        csvsql --query "select vid, [Gene.refGene] from '`basename {input} .txt`' where (popmax_freq IS NULL or popmax_freq < {params.min_freq} )  AND [PLP.jung] = 0 AND ([ExonicFunc.refGene] = 'synonymous SNV' ) " {input} > {output}
-
-    '''
-
-rule merge_txt:
-    input: expand(output_dir+"/{{set}}_{{maf}}/{chunk}.txt", chunk=CHUNKS)
-    output: output_dir+"/merged_txt/{set}_{maf}.txt"
-    resources :
-        mem_mb=10000
-    envmodules: "csvkit/1.0.7"
-    shell: '''
-        csvstack -t {input} | csvformat -T > {output}
-    '''
+### sort the data by chr and start and create a new column vid
+rule merge_call:
+    input: 
+        full=expand(output_dir + "/autogvp/{chunk}-autogvp-annotated-full.tsv", chunk=CHUNKS),
+        abridged = expand(output_dir + "/autogvp/{chunk}-autogvp-annotated-abridged.tsv", chunk=CHUNKS)
+    output: 
+        full = output_dir + "/merge_call/" + output_prefix + ".autogvp_full.tsv",
+        abridged = output_dir + "/merge_call/" + output_prefix + ".autogvp_abridged.tsv"
+    resources:
+        mem_mb = 40000,
+        threads = 12
+    shell: """
+        csvtk concat -E -t {input.full} | csvtk sort -t -k chr:N -k start:n  -E  | csvtk mutate2 -s -t -n vid -e '$chr + ":" + $start + ":" +  $ref + ":" + $alt'  > {output.full}
+        csvtk concat -E -t {input.abridged} | csvtk sort -t -k chr:N -k start:n  -E  | csvtk mutate2 -s -t -n vid -e '$chr + ":" + $start + ":" +  $ref + ":" + $alt'  > {output.abridged}
+    """
