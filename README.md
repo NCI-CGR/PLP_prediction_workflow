@@ -1,22 +1,10 @@
-# Snakemake workflow to predict P/LP (pathogenic/likely pathogenic variants)
+# Snakemake workflow to predict P/LP (pathogenic/likely pathogenic variants) using AutoGVP
 
 ## Introduction 
 
-Assuming the input data are a list of VCF files (for examples, multiple-sample VCF files split by chromosomes or genes), this workflow runs annovar, intervar and snpEff to predict P/LP variants in two ways: 1. Clinvar+Intervar (CI); 2. Jung's criteria as descried in [this paper](https://doi.org/10.1016/j.cancergen.2020.10.002) (as I learned from Jung Kim  ). The first method is straightforward, that is, the variant is predicted by as P/LP by either InterVar or ClinVar (with the CLINSTAT tag as "criteria_provided,_multiple_submitters,_no_conflicts",  "practice_guideline",  or "reviewed_by_expert_panel").  The second method is described in the [paper](https://doi.org/10.1016/j.cancergen.2020.10.002).  I named it "Jung's criteria" as I learned it from Dr. Jung Kim (and I have no idea how to call it ).  
+This new Snakemake workflow is to annotate variants using [AutoGVP](https://github.com/diskin-lab-chop/AutoGVP/tree/main).
 
-Assuming the input data are a list of VCF files (for examples, multiple-sample VCF files split by chromosomes or genes), this workflow runs annovar, intervar and snpEff to predict P/LP variants in two ways: 1. Clinvar+Intervar (CI); 2. Jung's criteria as descried in [this paper](https://doi.org/10.1016/j.cancergen.2020.10.002). The first method is straightforward, that is, the variant is predicted by as P/LP by either InterVar or ClinVar (with the CLINSTAT tag as "criteria_provided,_multiple_submitters,_no_conflicts", "practice_guideline", or "reviewed_by_expert_panel").  The second method is a little complicated, as described in the [paper](https://doi.org/10.1016/j.cancergen.2020.10.002).  I named it "Jung's criteria" as I learned it from Dr. Jung Kim (and I have no idea how to call it in a better way :) ).  Briefly, it is a union set of Clinvar+InterVar and two other variant sets based on the variant annotations from InterVar, AnnoVar and snpEff:
-1. variants with High impact (snpEff);
-2. variants meeting all the following criteria;
-   + Variants are predicted as VUS (variants of uncertain significance) by InterVar;
-   + Variants meets "3/4", "2/3", or "3/7"
-     + Predicted as ”damaging” missense mutations by 3 out of the 4 predictions;
-     + Predicted as "damaging" splice site mutations by 2 out of 3 predictions;
-     + Predicted as "damaging" missense or splice site mutations by 3 out of 7 predictions;
-  
-The overall process is as described in the diagram below: 
-
-
-![](images/pathogenic_identificatioin.png)
+![](img/autogvp.png)
 
 
 
