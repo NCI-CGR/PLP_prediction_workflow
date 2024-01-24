@@ -2,7 +2,7 @@
 
 ## Introduction 
 
-This new Snakemake workflow is to annotate variants using [AutoGVP](https://github.com/diskin-lab-chop/AutoGVP/tree/main).  It splits the input vcf files in multiple chunks as the [original pipeline](https://github.com/NCI-CGR/PLP_prediction_workflow/tree/main).  The main AutoGVP worflow followed Jung's bash script (/data/CGB_share/autoGVP_submit.sh @ biowulf).
+This new Snakemake workflow is to annotate variants using [AutoGVP](https://github.com/diskin-lab-chop/AutoGVP/tree/main).  It splits the input vcf files in multiple chunks as the [original pipeline](https://github.com/NCI-CGR/PLP_prediction_workflow/tree/main).  The main AutoGVP worflow followed Jung's design (/data/CGB_share/autoGVP_submit.sh @ biowulf).
 
 ![](img/autogvp.png)
 
@@ -10,9 +10,9 @@ This new Snakemake workflow is to annotate variants using [AutoGVP](https://gith
 ---
 
 ## Methods
-As the orignal workflow has not be designed and tested for hg19, we made some minor revisios in certain steps. 
 
-### The major components of the workflow
+
+### The major components of the Snakemake workflow
 + [Configure file](config/genomel_config.yaml)
 + [Snakefile](workflow/Snakefile)
 + [The wrapper script to launch the workflow at Biowulf](./run_it2.sh)
@@ -49,6 +49,8 @@ snakemake --profile workflow/profiles/biowulf --verbose -p --use-conda --jobs 40
 
 
 ### Revisions to run AutoGVP
+As the orignal *AutoGVP* pipeline has not been designed and tested for hg19, we made some minor revisios in certain steps. 
+
 #### Input VCF files
 There is no special requirement by AutoGVP for the VCF input files.  We removed the original annotation and the format columns to reduce file size and avoid any conflict due to the existing annotations.  This step has been builted in the workflow.
 ```bash
@@ -148,4 +150,4 @@ output/merge_call/
 | ClinVar         | clinvar_20231230                 | clinvar_20210123 (via annovar)                                                                                                                                                          |
 | AutoPSV1        | v2.0-2-g7fb1be9                  | NA                                                                                                                                                                                      |
 
-:bookmark: It is noted that annotation approaches are significantly different between the two workflows, but the same version of InterVar were used.  One of the differences to be highlighted is the data source of the ClinVar: *clinvar_20210123* was used and annotated variants via AnnoVar, whereas *clinvar_20231230* was used directly by *AutoGVP*.
+:bookmark: It is noted that annotation approaches are significantly different between the two workflows, but the same version of InterVar were used.  One of the differences to be highlighted is the data source of the ClinVar: *clinvar_20210123* was used and annotated variants via AnnoVar in [the original P/LP prediction workflow](https://github.com/NCI-CGR/PLP_prediction_workflow/tree/main), whereas *clinvar_20231230* was used directly by *AutoGVP*.
