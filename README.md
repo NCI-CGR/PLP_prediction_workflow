@@ -1,4 +1,30 @@
+<!-- omit in toc -->
 # Snakemake workflow to predict P/LP (pathogenic/likely pathogenic variants) using AutoGVP
+Author: Wei Zhu (zhuw10@nih.gov) 
+
+Date: 2023-08-21 14:30:53
+
+---
+- [Introduction](#introduction)
+- [Methods](#methods)
+  - [The major components of the Snakemake workflow](#the-major-components-of-the-snakemake-workflow)
+  - [Layout of the workspace and the worklfow](#layout-of-the-workspace-and-the-worklfow)
+  - [Revisions to run AutoGVP](#revisions-to-run-autogvp)
+    - [Input VCF files](#input-vcf-files)
+    - [Vep](#vep)
+    - [Intervar](#intervar)
+    - [autopvs1](#autopvs1)
+    - [AnnoVar](#annovar)
+    - [Prepare ClinVar data for the use of hg19](#prepare-clinvar-data-for-the-use-of-hg19)
+    - [Run AutoGVP](#run-autogvp)
+    - [Output](#output)
+  - [Annotation data sources used in this analysis.](#annotation-data-sources-used-in-this-analysis)
+- [Updates](#updates)
+  - [Update on June 4, 2024](#update-on-june-4-2024)
+    - [Download latest ClinVar database for hg38](#download-latest-clinvar-database-for-hg38)
+    - [Run snakemake workflow with hg38 setting](#run-snakemake-workflow-with-hg38-setting)
+
+---
 
 ## Introduction 
 
@@ -154,15 +180,15 @@ output/merge_call/
 
 ---
 
-# New updates
+## Updates
 
-## Update on June 4, 2024
+### Update on June 4, 2024
 AutoGVP has been updated due to [a revison in the recent ClinVar release](https://github.com/diskin-lab-chop/AutoGVP/issues/242), and a new docker image is released: 
 + docker://pgc-images.sbgenomics.com/diskin-lab/autogvp:v1.0.1
    
 Accordingly, we updated our Snakemake workflow and also added one example to run AutoGVP with the hg38 reference genome. 
 
-### Download latest ClinVar database for hg38
+#### Download latest ClinVar database for hg38
 ```bash
 cd /data/GenoMEL/AutoGVP
 mkdir clinvar_20240603
@@ -214,7 +240,7 @@ drwxr-s--- 2 zhuw10 GenoMEL       4096 Jun  4 10:14 .
 -rw-r----- 1 zhuw10 GenoMEL 1528115185 Jun  4 10:14 ClinVar-selected-submissions.tsv
 ```
 
-### Run snakemake workflow with hg38 setting
+#### Run snakemake workflow with hg38 setting
 + /data/GenoMEL/PLP_prediction_workflow
   + config/UKB_June2024.yaml
 ```yml
