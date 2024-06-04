@@ -178,7 +178,8 @@ rule autogvp:
     output:
         full=output_dir + "/autogvp/{chunk}-autogvp-annotated-full.tsv",
         abridged=output_dir + "/autogvp/{chunk}-autogvp-annotated-abridged.tsv",
-    container: "docker://pgc-images.sbgenomics.com/naqvia/autogvp:latest"
+    # container: "docker://pgc-images.sbgenomics.com/naqvia/autogvp:latest"
+    container: "docker://pgc-images.sbgenomics.com/diskin-lab/autogvp:v1.0.1"
     shell: """
         AutoGVP/run_autogvp.sh --workflow custom \
             --vcf {input.vcf}  \

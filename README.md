@@ -151,3 +151,131 @@ output/merge_call/
 | AutoPSV1        | v2.0-2-g7fb1be9                  | NA                                                                                                                                                                                      |
 
 :bookmark: It is noted that annotation approaches are significantly different between the two workflows, but the same version of InterVar were used.  One of the differences to be highlighted is the data source of the ClinVar: *clinvar_20210123* was used and annotated variants via AnnoVar in [the original P/LP prediction workflow](https://github.com/NCI-CGR/PLP_prediction_workflow/tree/main), whereas *clinvar_20231230* was used directly by *AutoGVP*.
+
+---
+
+# New updates
+
+## Update on June 4, 2024
+AutoGVP has been updated due to [a revison in the recent ClinVar release](https://github.com/diskin-lab-chop/AutoGVP/issues/242), and a new docker image is released: 
++ docker://pgc-images.sbgenomics.com/diskin-lab/autogvp:v1.0.1
+   
+Accordingly, we updated our Snakemake workflow and also added one example to run AutoGVP with the hg38 reference genome. 
+
+### Download latest ClinVar database for hg38
+```bash
+cd /data/GenoMEL/AutoGVP
+mkdir clinvar_20240603
+
+### Download the latest data
+wget -nc -e robots=off --reject "index.html*" -r --level=1  -nd -np -A "clinvar_20240603.vcf.gz*" -P clinvar_20240603/ https://ftp.ncbi.nlm.nih.gov/pub/clinvar/vcf_GRCh38/
+
+wget https://ftp.ncbi.nlm.nih.gov/pub/clinvar/tab_delimited/submission_summary.txt.gz -P clinvar_20240603/
+
+wget https://ftp.ncbi.nlm.nih.gov/pub/clinvar/tab_delimited/variant_summary.txt.gz -P clinvar_20240603/
+
+ls -al clinvar_20240603/
+total 623525
+drwxr-s---. 2 zhuw10 GenoMEL      4096 Jun  4 10:07 .
+drwxr-sr-x. 2 zhuw10 GenoMEL      4096 Jun  4 10:01 ..
+-rw-r-----. 1 zhuw10 GenoMEL 101041151 Jun  4 09:08 clinvar_20240603.vcf.gz
+-rw-r-----. 1 zhuw10 GenoMEL       126 Jun  4 09:08 clinvar_20240603.vcf.gz.md5
+-rw-r-----. 1 zhuw10 GenoMEL    534810 Jun  4 09:08 clinvar_20240603.vcf.gz.tbi
+-rw-r-----. 1 zhuw10 GenoMEL 260853747 Jun  3 14:31 submission_summary.txt.gz
+-rw-r-----. 1 zhuw10 GenoMEL 276058849 Jun  4 09:07 variant_summary.txt.gz
+
+
+### Run select-clinVar-submissions.R
+
+module load singularity
+# https://github.com/diskin-lab-chop/AutoGVP
+singularity pull docker://pgc-images.sbgenomics.com/diskin-lab/autogvp:v1.0.1
+
+### Output data/ClinVar-selected-submissions.tsv
+singularity exec -B $PWD:/share  --pwd /share autogvp_v1.0.1.sif Rscript ./AutoGVP/scripts/select-clinVar-submissions.R --variant_summary clinvar_20240603/variant_summary.txt.gz --submission_summary clinvar_20240603/submission_summary.txt.gz --outdir clinvar_20240603/
+# Warning message:
+# In left_join(., variant_summary_df, by = "VariationID", multiple = "all",  :
+#   Detected an unexpected many-to-many relationship between `x` and `y`.
+# ℹ Row 25499 of `x` matches multiple rows in `y`.
+# ℹ Row 2 of `y` matches multiple rows in `x`.
+# ℹ If a many-to-many relationship is expected, set `relationship =
+#   "many-to-many"` to silence this warning.
+
+
+ls -altr clinvar_20240603/
+total 2115825
+-rw-r----- 1 zhuw10 GenoMEL  260853747 Jun  3 14:31 submission_summary.txt.gz
+-rw-r----- 1 zhuw10 GenoMEL  276058849 Jun  4 09:07 variant_summary.txt.gz
+-rw-r----- 1 zhuw10 GenoMEL     534810 Jun  4 09:08 clinvar_20240603.vcf.gz.tbi
+-rw-r----- 1 zhuw10 GenoMEL        126 Jun  4 09:08 clinvar_20240603.vcf.gz.md5
+-rw-r----- 1 zhuw10 GenoMEL  101041151 Jun  4 09:08 clinvar_20240603.vcf.gz
+drwxr-sr-x 2 zhuw10 GenoMEL       4096 Jun  4 10:01 ..
+drwxr-s--- 2 zhuw10 GenoMEL       4096 Jun  4 10:14 .
+-rw-r----- 1 zhuw10 GenoMEL 1528115185 Jun  4 10:14 ClinVar-selected-submissions.tsv
+```
+
+### Run snakemake workflow with hg38 setting
++ /data/GenoMEL/PLP_prediction_workflow
+  + config/UKB_June2024.yaml
+```yml
+# given a list vcf file under the folder
+vcf_input_dir: "/data/GenoMEL/UKB/final_vcf"
+
+### output_dir is sufficient to keep data unique and output_prefix is to for the merged file
+output_dir: "/data/GenoMEL/PLP_prediction_workflow/output_June2024"
+output_prefix: "UKB"
+# ref: "/data/GenoMEL/AutoGVP/AutoGVP/data/Homo_sapiens_assembly19.fasta"
+ref: /data/zhuw10/ukbb/ref/GRCh38_full_analysis_set_plus_decoy_hla.fa
+genome: "hg38"
+genome_GRC: "GRCh38"
+clinvar:
+  dir: "/data/GenoMEL/AutoGVP/clinvar_20240603"
+  vcf: "clinvar_20240603.vcf.gz"
+  selected_submission: "ClinVar-selected-submissions.tsv"
+  variant_summary: "variant_summary.txt.gz"
+  submission_summary: "submission_summary.txt.gz"
+conceptIDs: "/data/GenoMEL/AutoGVP/AutoGVP/data/clinvar_cpg_concept_ids.txt"
+split_total: 100
+```
+
+
+```bash
+conda activate snakemake
+
+cd /data/GenoMEL/PLP_prediction_workflow
+
+snakemake -np -s workflow/Snakefile --configfile config/UKB_June2024.yaml --verbose 
+
+
+sbatch -J autogvs --export=ALL --mem=12g -p norm -o ${PWD}/slurm-%j.out -e ${PWD}/slurm-%j.err --time=24:00:00 --wrap='./run_it2.sh config/UKB_June2024.yaml'
+
+ls -alt output_June2024/
+total 14158
+drwxr-s--- 2 zhuw10 GenoMEL     4096 Jun  4 11:12 merge_call
+drwxr-s--- 2 zhuw10 GenoMEL     4096 Jun  4 11:10 .
+drwxr-s--- 2 zhuw10 GenoMEL     4096 Jun  4 11:08 autogvp
+drwxr-s--- 2 zhuw10 GenoMEL     4096 Jun  4 11:06 intervar_ann
+drwxr-s--- 2 zhuw10 GenoMEL     4096 Jun  4 11:04 vep_ann
+drwxr-s--- 2 zhuw10 GenoMEL     4096 Jun  4 11:03 annovar_ann
+drwxr-s--- 2 zhuw10 GenoMEL     4096 Jun  4 11:01 autopvs1
+drwxr-s--- 2 zhuw10 GenoMEL     4096 Jun  4 10:39 splitted
+-rw-r----- 1 zhuw10 GenoMEL     6844 Jun  4 10:28 UKB.vcf.gz.tbi
+-rw-r----- 1 zhuw10 GenoMEL 14489781 Jun  4 10:28 UKB.vcf.gz
+drwxr-s--- 2 zhuw10 GenoMEL     4096 Jun  4 10:26 prep
+drwxr-s--- 2 zhuw10 GenoMEL     4096 Jun  4 10:26 ..
+
+csvtk cut -t -f autogvp_call output_June2024/merge_call/UKB.autogvp_abridged.tsv | csvtk del-header | sort | uniq -c
+   7966 Benign
+  12038 Likely_benign
+    976 Likely_pathogenic
+    819 Pathogenic
+1102177 Uncertain_significance
+
+csvtk cut -t -f autogvp_call_reason output_June2024/merge_call/UKB.autogvp_abridged.tsv | csvtk del-header | sort | uniq -c
+   14536 ClinVar
+1109440 InterVar
+
+csvtk pretty -t  output_april2024/merge_call/UKB.autogvp_abridged.tsv| less -S 
+
+csvtk filter2 -t -f '$autogvp_call == "Pathogenic" ' output_June2024/merge_call/UKB.autogvp_abridged.tsv
+```

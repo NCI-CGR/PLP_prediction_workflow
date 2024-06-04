@@ -1,0 +1,19 @@
+# given a list vcf file under the folder
+vcf_input_dir: "/data/GenoMEL/UKB/final_vcf"
+
+### output_dir is sufficient to keep data unique and output_prefix is to for the merged file
+output_dir: "/data/GenoMEL/PLP_prediction_workflow/output_June2024"
+output_prefix: "UKB"
+# ref: "/data/GenoMEL/AutoGVP/AutoGVP/data/Homo_sapiens_assembly19.fasta"
+ref: /data/zhuw10/ukbb/ref/GRCh38_full_analysis_set_plus_decoy_hla.fa
+genome: "hg38"
+genome_GRC: "GRCh38"
+clinvar:
+  dir: "/data/GenoMEL/AutoGVP/clinvar_20240603"
+  vcf: "clinvar_20240603.vcf.gz"
+  selected_submission: "ClinVar-selected-submissions.tsv"
+  variant_summary: "variant_summary.txt.gz"
+  submission_summary: "submission_summary.txt.gz"
+conceptIDs: "/data/GenoMEL/AutoGVP/AutoGVP/data/clinvar_cpg_concept_ids.txt"
+split_total: 100
+
