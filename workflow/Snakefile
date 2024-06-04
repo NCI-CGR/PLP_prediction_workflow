@@ -148,7 +148,7 @@ rule annovar:
         genome=genome,
         prefix=lambda wildcards: output_dir + "/annovar/" + wildcards.chunk
     shell: '''
-        perl $ANNOVAR_HOME/table_annovar.pl  {input} $ANNOVAR_DATA/{params.genome} --buildver {params.genome} --out {params.prefix} --remove --protocol refGene,knownGene,ensGene,exac03nontcga,gnomad211_exome,gnomad211_genome,esp6500siv2_all,1000g2015aug_all,clinvar_20210123,dbnsfp41a,dbscsnv11,spliceai_filtered,spidex,cosmic92_coding --operation g,g,g,f,f,f,f,f,f,f,f,f,f,f --nastring '.'  --thread {threads} 2>{log}
+        perl $ANNOVAR_HOME/table_annovar.pl  {input} $ANNOVAR_DATA/{params.genome} --buildver {params.genome} --out {params.prefix} --remove --protocol refGene,knownGene,ensGene,exac03nontcga,gnomad211_exome,gnomad211_genome,esp6500siv2_all,1000g2015aug_all,clinvar_20230416,dbnsfp41a,dbscsnv11,spliceai_filtered,spidex,cosmic92_coding --operation g,g,g,f,f,f,f,f,f,f,f,f,f,f --nastring '.'  --thread {threads} 2>{log}
     '''
 
 rule snpeff:
