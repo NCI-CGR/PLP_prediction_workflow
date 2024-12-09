@@ -181,7 +181,7 @@ rule autogvp:
     # container: "docker://pgc-images.sbgenomics.com/naqvia/autogvp:latest"
     container: "docker://pgc-images.sbgenomics.com/diskin-lab/autogvp:v1.0.1"
     shell: """
-        AutoGVP/run_autogvp.sh --workflow custom \
+        ./AutoGVP/run_autogvp.sh --workflow custom \
             --vcf {input.vcf}  \
             --intervar {input.intervar} \
             --multianno {input.annovar} \
@@ -205,8 +205,8 @@ rule merge_call:
         full = output_dir + "/merge_call/" + output_prefix + ".autogvp_full.tsv",
         abridged = output_dir + "/merge_call/" + output_prefix + ".autogvp_abridged.tsv"
     resources:
-        mem_mb = 40000,
-        threads = 12
+        mem_mb = 180000,
+        threads = 1
     shell: """
         csvtk concat -E -t {input.full} | csvtk sort -t -k chr:N -k start:n  -E  | csvtk mutate2 -s -t -n vid -e '$chr + ":" + $start + ":" +  $ref + ":" + $alt'  > {output.full}
         csvtk concat -E -t {input.abridged} | csvtk sort -t -k chr:N -k start:n  -E  | csvtk mutate2 -s -t -n vid -e '$chr + ":" + $start + ":" +  $ref + ":" + $alt'  > {output.abridged}
