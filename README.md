@@ -103,7 +103,14 @@ In the workflow, we had introduced the setting from the module *annovar* to redu
 We made a revision at /data/CGB_share/autopvs1_wz/autoPVS1_from_VEP_vcf.py to introdue genome_version option back to the python script:
 
 ```bash
-python /data/CGB_share/autopvs1_wz/autoPVS1_from_VEP_vcf.py --genome_version {params.genome} --vep_vcf {input.vcf} > {output}
+### clone autoPVS1 repo under PLP_prediction_workflow and copy the revised code to replace the original one
+git clone https://github.com/d3b-center/D3b-autoPVS1.git
+cp data/autoPVS1_from_VEP_vcf.py D3b-autoPVS1/
+
+
+# python /data/CGB_share/autopvs1_wz/autoPVS1_from_VEP_vcf.py --genome_version {params.genome} --vep_vcf {input.vcf} > {output}
+
+python ./D3b-autoPVS1/autoPVS1_from_VEP_vcf.py --genome_version {params.genome} --vep_vcf {input.vcf} > {output}
 ```
 
 Besides, we had copied the reference genomes to the folder /data/CGB_share/autopvs1_wz/data, and revised the file [config.ini](data/autopvs1_config.ini) accordingly for autopvs1.

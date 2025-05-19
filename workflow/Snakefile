@@ -148,7 +148,7 @@ rule autopvs1:
     params: 
         genome=genome
     shell: """
-        python /data/CGB_share/autopvs1_wz/autoPVS1_from_VEP_vcf.py --genome_version {params.genome} --vep_vcf {input.vcf} > {output}
+        python python ./D3b-autoPVS1/autoPVS1_from_VEP_vcf.py --genome_version {params.genome} --vep_vcf {input.vcf} > {output}
     """
 
 rule annovar_ann:
