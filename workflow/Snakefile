@@ -129,12 +129,12 @@ rule intervar_ann:
         vcf = output_dir+"/vep_ann/{chunk}_VEP.vcf"
     output:
         multiext(output_dir+"/intervar_ann/{chunk}_VEP." + genome + "_multianno",  ".txt", ".txt.grl_p", ".txt.intervar")
-    envmodules: "annovar"
+    envmodules: "annovar", "intervar/2.2.1"
     params: 
         genome=genome,
         prefix= output_dir+"/intervar_ann/{chunk}_VEP"
     shell: """
-        /home/zhuw10/git/InterVar-2.2.1/Intervar.py -i {input.vcf} --input_type=VCF -o {params.prefix} -b {params.genome} -t /home/zhuw10/git/InterVar-2.2.1/intervardb -d $ANNOVAR_DATA/{params.genome} --table_annovar=$ANNOVAR_HOME/table_annovar.pl --convert2annovar=$ANNOVAR_HOME/convert2annovar.pl --annotate_variation=$ANNOVAR_HOME/annotate_variation.pl
+        Intervar.py -i {input.vcf} --input_type=VCF -o {params.prefix} -b {params.genome} -t $INTERVAR_DATA/intervardb -d $ANNOVAR_DATA/{params.genome} --table_annovar=$ANNOVAR_HOME/table_annovar.pl --convert2annovar=$ANNOVAR_HOME/convert2annovar.pl --annotate_variation=$ANNOVAR_HOME/annotate_variation.pl
     """
 
 ### I cannot use Jung's config.ini as
