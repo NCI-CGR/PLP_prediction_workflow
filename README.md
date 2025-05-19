@@ -93,7 +93,11 @@ sbatch -J hkbc --export=ALL --mem=12g -p norm -o ${PWD}/slurm-%j.out -e ${PWD}/s
 As the original *AutoGVP* pipeline has not been designed and tested for hg19, we made some minor revisions in certain steps. 
 
 #### Input VCF files
-There is no special requirement by AutoGVP for the VCF input files.  We removed the original annotation and the format columns to reduce file size and avoid any conflict due to the existing annotations.  This step has been builted in the workflow.
+There is no special requirement by AutoGVP for the VCF input files: it could one or multiple-part VCF file(s) and the parent folder of the vcf file(s) should be specified as *vcf_input_dir* in the configure file.  
+
+If the input files are individual VCF file for each sample/subject, those VCF files should be merged before employing this workflow. Generally, we do not want repeat the annotation process for each sample; it is more efficient to apply annotation on the joint variant call output. 
+
+We removed the original annotation and the format columns to reduce file size and avoid any conflict due to the existing annotations.  This step has been built in the workflow.
 ```bash
 bcftools view -e 'ALT="*"' -Ou {input} |bcftools norm -m-both -Ou --threads {threads} | bcftools norm -f {params.ref} | bcftools annotate -Ou -x ID  -I +"%CHROM:%POS:%REF:%ALT" --threads {threads} | bcftools annotate -Oz -x FORMAT,^INFO/AC,^INFO/AF,^INFO/AN -o {output.vcf}
       tabix -p vcf {output.vcf}
