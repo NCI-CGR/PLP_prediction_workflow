@@ -1,4 +1,4 @@
-name: germlineSmallVariantCallingV4
+name: AutoGVP
 channels:
   - bioconda
   - conda-forge

@@ -8,6 +8,7 @@ Date: 2023-08-21 14:30:53
 - [Introduction](#introduction)
 - [Methods](#methods)
   - [The major components of the Snakemake workflow](#the-major-components-of-the-snakemake-workflow)
+  - [Get it started](#get-it-started)
   - [Layout of the workspace and the worklfow](#layout-of-the-workspace-and-the-worklfow)
   - [Revisions to run AutoGVP](#revisions-to-run-autogvp)
     - [Input VCF files](#input-vcf-files)
@@ -39,6 +40,7 @@ This new Snakemake workflow is to annotate variants using [AutoGVP](https://gith
 
 
 ### The major components of the Snakemake workflow
++ [environment.yaml](./environment.yaml)
 + [Configure file](config/genomel_config.yaml)
 + [Snakefile](workflow/Snakefile)
 + [The wrapper script to launch the workflow at Biowulf](./run_it2.sh)
@@ -59,6 +61,19 @@ export TMPDIR=TMP
 snakemake --profile workflow/profiles/biowulf --verbose -p --use-conda --jobs 400 --default-resources "mem_mb=10000  " --use-envmodules --use-singularity --singularity-args " -B /vf,/spin1,/data,/fdb,/gpfs "  --latency-wait 120 -T 0 -s workflow/Snakefile --configfile $1
 ```
 
+### Get it started
+```bash
+### Create the conda env AutoGVP
+conda env create -f PLP_prediction_workflow/environment.yaml
+
+### activate the workflow
+conda activate AutoGVP
+
+### Launch the workflow
+sbatch -J hkbc --export=ALL --mem=12g -p norm -o ${PWD}/slurm-%j.out -e ${PWD}/slurm-%j.err --time=24:00:00 --wrap='./run_it2.sh config/HKBC_Dec2024.yaml'
+```
+
+
 ### Layout of the workspace and the worklfow
 + /data/GenoMEL/AutoGVP/AutoGVP/data
   + Homo_sapiens_assembly19.fasta
@@ -75,7 +90,7 @@ snakemake --profile workflow/profiles/biowulf --verbose -p --use-conda --jobs 40
 
 
 ### Revisions to run AutoGVP
-As the orignal *AutoGVP* pipeline has not been designed and tested for hg19, we made some minor revisios in certain steps. 
+As the original *AutoGVP* pipeline has not been designed and tested for hg19, we made some minor revisions in certain steps. 
 
 #### Input VCF files
 There is no special requirement by AutoGVP for the VCF input files.  We removed the original annotation and the format columns to reduce file size and avoid any conflict due to the existing annotations.  This step has been builted in the workflow.
@@ -98,9 +113,26 @@ In the workflow, we had introduced the setting from the module *annovar* to redu
 /home/zhuw10/git/InterVar-2.2.1/Intervar.py -i {input.vcf} --input_type=VCF -o {params.prefix} -b {params.genome} -t /home/zhuw10/git/InterVar-2.2.1/intervardb -d $ANNOVAR_DATA/{params.genome} --table_annovar=$ANNOVAR_HOME/table_annovar.pl --convert2annovar=$ANNOVAR_HOME/convert2annovar.pl --annotate_variation=$ANNOVAR_HOME/annotate_variation.pl
 ```
 
+As InterVar-2.2.1 biowulf module is available now, we replaced the locally install version with the new biowulf module adaptation: 
+```bash
+rule intervar_ann:
+    input: 
+        vcf = output_dir+"/vep_ann/{chunk}_VEP.vcf"
+    output:
+        multiext(output_dir+"/intervar_ann/{chunk}_VEP." + genome + "_multianno",  ".txt", ".txt.grl_p", ".txt.intervar")
+    envmodules: "annovar", "intervar/2.2.1"
+    params: 
+        genome=genome,
+        prefix= output_dir+"/intervar_ann/{chunk}_VEP"
+    shell: """
+        Intervar.py -i {input.vcf} --input_type=VCF -o {params.prefix} -b {params.genome} -t $INTERVAR_DATA/intervardb -d $ANNOVAR_DATA/{params.genome} --table_annovar=$ANNOVAR_HOME/table_annovar.pl --convert2annovar=$ANNOVAR_HOME/convert2annovar.pl --annotate_variation=$ANNOVAR_HOME/annotate_variation.pl
+    """
+```
+
+
 #### autopvs1
 
-We made a revision at /data/CGB_share/autopvs1_wz/autoPVS1_from_VEP_vcf.py to introdue genome_version option back to the python script:
+We made a revision at data/autoPVS1_from_VEP_vcf.py to introduce genome_version option back to the python script:
 
 ```bash
 ### clone autoPVS1 repo under PLP_prediction_workflow and copy the revised code to replace the original one
@@ -121,7 +153,7 @@ We used the annovar module installed at Biowulf with the data sets  "--protocol 
 :bookmark: this setting needs to be customized for other studies in the future.
 
 #### Prepare ClinVar data for the use of hg19
-To run AutoGVP, latest ClinVar data need to be downloaed and prepared. 
+To run AutoGVP, latest ClinVar data need to be downloaded and prepared. 
 
 ```bash
 cd /data/GenoMEL/AutoGVP
