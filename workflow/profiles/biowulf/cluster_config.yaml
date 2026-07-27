@@ -1,6 +1,67 @@
 __default__ :
-    ntasks    : "1"
+    partition     : "defq,cgrq"
+    ntasks        : "1"
     cpus-per-task : "{threads}"
-    nodes     : "1"
-    output    : "logs/{rule}/{rule}.{wildcards}.out"
-    error     : "logs/{rule}/{rule}.{wildcards}.err"
+    nodes         : "1"
+    mem           : "8G"
+    time          : "96:00:00"
+    output        : "logs/{rule}/{rule}.{wildcards}.out"
+    error         : "logs/{rule}/{rule}.{wildcards}.err"
+
+# ---- per-rule overrides ----
+prep:
+    partition     : "defq,cgrq"
+    mem           : "50G"
+    time          : "10-00:00:00"
+
+merge_vcf:
+    partition     : "defq,cgrq"
+    mem           : "20G"
+    time          : "10-00:00:00"
+
+get_vcf_header:
+    partition     : "defq,cgrq"
+    mem           : "4G"
+    time          : "00:30:00"
+
+split_vcf:
+    partition     : "bigmemq"
+    mem           : "128G"
+    time          : "48:00:00"
+
+add_vcf_header:
+    partition     : "defq,cgrq"
+    mem           : "4G"
+    time          : "00:30:00"
+
+# VEP parallelised with --fork 8 (threads: 8 -> 8 cpus). ~870k variants/chunk.
+# More forks need more RAM and more wall time headroom on dense chunks.
+vep_ann:
+    partition     : "cgrq"
+    mem           : "32G"
+    time          : "15-00:00:00"
+
+intervar_ann:
+    partition     : "defq,cgrq"
+    mem           : "16G"
+    time          : "7-00:00:00"
+
+autopvs1:
+    partition     : "defq,cgrq"
+    mem           : "16G"
+    time          : "200:00:00"
+
+annovar_ann:
+    partition     : "defq,cgrq"
+    mem           : "32G"
+    time          : "10-00:00:00"
+
+autogvp:
+    partition     : "defq,cgrq"
+    mem           : "16G"
+    time          : "14-00:00:00"
+
+merge_call:
+    partition     : "bigmemq"
+    mem           : "180G"
+    time          : "7-00:00:00"
